@@ -1,0 +1,39 @@
+{
+  "name": "flip-phone-3d",
+  "version": "0.1.0",
+  "description": "用 three.js 做的翻盖手机：珠光烤漆外壳、铬边、能翻开、能按键、能 360 度转着看、贴纸自动抠图。屏幕上显示什么由你决定",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./engine": "./src/engine.js",
+    "./screens": "./src/screens.js",
+    "./cutout": "./src/cutout.js"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test --test-force-exit test/phone.test.js"
+  },
+  "peerDependencies": {
+    "three": ">=0.160.0"
+  },
+  "devDependencies": {
+    "three": "0.186.1"
+  },
+  "keywords": [
+    "three.js",
+    "flip phone",
+    "webgl",
+    "3d",
+    "sticker"
+  ],
+  "license": "CC-BY-NC-4.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2046945334-oss/flip-phone-3d.git"
+  }
+}

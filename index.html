@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>flip-phone-3d 示范</title>
+<style>
+  :root { color-scheme: light; font-family: "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif; }
+  html, body { margin: 0; height: 100%; }
+  body { background: radial-gradient(120% 80% at 50% 30%, #fbf3f1, #ecdfe2); color: #3f3336; display: flex; flex-direction: column; overflow: hidden; }
+  header { text-align: center; padding: 12px 16px 0; }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  header p { margin: 0; font-size: 12px; color: #8a7a7e; }
+  #phone { flex: 1; min-height: 0; position: relative; }
+  .bar { padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+  .dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; padding: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.15), inset 0 -3px 6px rgba(0,0,0,.1); }
+  .dot[aria-checked="true"] { outline: 2px solid #c9768b; outline-offset: 2px; }
+  button.b { min-height: 38px; padding: 0 14px; border-radius: 19px; border: 1px solid rgba(0,0,0,.1); background: #fff; font: inherit; font-size: 13px; color: inherit; cursor: pointer; }
+  button.b[aria-pressed="true"], button.b.main { background: #c9768b; border-color: #c9768b; color: #fff; }
+  #msg { font-size: 12px; color: #8a7a7e; min-height: 1.4em; text-align: center; }
+  #cut { display: none; gap: 10px; align-items: center; background: #fff; padding: 8px; border-radius: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+  #cut.on { display: flex; }
+  #cut figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; cursor: pointer; padding: 4px; border-radius: 10px; background: repeating-conic-gradient(#f1e9eb 0 25%, #fff 0 50%) 0 0 / 12px 12px; }
+  #cut img { width: 72px; height: 72px; object-fit: contain; }
+  #fail { display: none; padding: 32px; text-align: center; font-size: 14px; }
+  footer { font-size: 11px; color: #a3959a; text-align: center; padding-bottom: 6px; }
+  footer a { color: inherit; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header>
+  <h1>flip-phone-3d</h1>
+  <p>点一下翻开 · 拖动转着看 · 两指缩放 · 双击回正 · 按 1~6 换颜色</p>
+</header>
+<div id="phone"></div>
+<div id="fail">这个浏览器打不开 WebGL，看不到 3D 手机。</div>
+<div class="bar">
+  <div id="msg" role="status"></div>
+  <div id="cut" role="dialog" aria-label="选一张贴上去"></div>
+  <div class="row" id="colors" role="radiogroup" aria-label="外壳颜色"></div>
+  <div class="row">
+    <button class="b" id="edit" aria-pressed="false">贴纸</button>
+    <button class="b" id="pick" hidden>选一张图</button>
+    <button class="b" id="rm" hidden>撕掉选中的</button>
+    <button class="b" id="cover">换外屏照片</button>
+    <button class="b" id="toggle">翻开 / 合上</button>
+  </div>
+</div>
+<input type="file" id="fs" accept="image/*" hidden>
+<input type="file" id="fc" accept="image/*" hidden>
+<footer>CC BY-NC 4.0 · <a href="https://github.com/2046945334-oss/flip-phone-3d">GitHub</a></footer>
+<script type="module">
+import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { createFlipPhone, cutout, shrink, COLORS } from './src/index.js'
+const $ = id => document.getElementById(id)
+const say = t => { $('msg').textContent = t; clearTimeout(say.t); say.t = setTimeout(() => { $('msg').textContent = '' }, 2600) }
+const H = 3600e3, now = Date.now()
+// 示范用的假消息
+const inbox = [
+  { title: '今天路过那家面包店，给你留了一个可颂，放在桌上了', tag: '便签', time: now - 0.3 * H, unread: true },
+  { title: '雨好大，记得带伞', tag: '短信', time: now - 2 * H, unread: true },
+  { title: '周末一起去看海吗？', tag: '短信', time: now - 26 * H },
+]
+const outbox = [
+  { title: '晚饭想吃什么', tag: '短信', time: now - 1 * H, status: '对方回了', statusTone: 'ok', note: '想吃你做的番茄面' },
+  { title: '我到家了', tag: '短信', time: now - 5 * H, status: '已读' },
+]
+const saved = JSON.parse(localStorage.getItem('fp3d-demo') || '{}')
+const save = patch => { Object.assign(saved, patch); try { localStorage.setItem('fp3d-demo', JSON.stringify(saved)) } catch { say('贴纸太大，这次没存进浏览器') } }
+let phone
+try {
+  phone = createFlipPhone($('phone'), {
+    THREE, RoundedBoxGeometry, RoomEnvironment,
+    color: saved.color || 'sakura', cover: saved.cover || '', stickers: saved.stickers || [],
+    inbox, outbox,
+    onOpenItem: (it, tab) => {
+      if (tab === 'in' && it.unread) { it.unread = false; phone.setInbox(inbox) }
+      phone.toast('打开了：' + it.title.slice(0, 8) + (it.title.length > 8 ? '…' : ''))
+    },
+    onClose: () => phone.close(),
+    onColorChange: c => { save({ color: c }); paintDots() },
+    onStickersChange: list => save({ stickers: list }),
+    onError: err => { console.error(err); $('phone').style.display = 'none'; $('fail').style.display = 'block' },
+  })
+} catch (e) { $('phone').style.display = 'none'; $('fail').style.display = 'block' }
+// 颜色
+const DOT = { silver: '#d9dce2', cream: '#f4ece0', sakura: '#f3cdd6', mint: '#c7e6d8', mist: '#c6d4e8', ink: '#2c2d34' }
+const NAME = { silver: '银', cream: '奶白', sakura: '樱花粉', mint: '薄荷', mist: '雾蓝', ink: '墨黑' }
+COLORS.forEach((c, i) => {
+  const b = document.createElement('button'); b.className = 'dot'; b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.c = c
+  b.style.background = DOT[c]; b.setAttribute('aria-label', NAME[c] + '（数字键 ' + (i + 1) + '）')
+  b.onclick = () => { phone.setColor(c); save({ color: c }); paintDots() }
+  $('colors').appendChild(b)
+})
+function paintDots() { for (const b of $('colors').children) b.setAttribute('aria-checked', String(phone && phone.color === b.dataset.c)) }
+paintDots()
+// 贴纸
+$('edit').onclick = () => {
+  const on = !phone.editing; phone.setEditing(on)
+  $('edit').setAttribute('aria-pressed', String(on)); $('pick').hidden = !on; $('rm').hidden = !on
+  say(on ? '转到想贴的那一面，点「选一张图」；按住贴纸拖，两指缩放转，长按撕' : '')
+}
+$('pick').onclick = () => $('fs').click()
+$('rm').onclick = () => { const id = phone.selectedSticker; if (id) phone.removeSticker(id); else say('先点一下要撕的贴纸') }
+$('fs').onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return
+  say('正在抠图…')
+  const raw = await shrink(f, 512)
+  let cut = null
+  try { cut = await cutout(raw, { max: 384 }) } catch (e) { say(e.message) }
+  const box = $('cut'); box.innerHTML = ''; box.classList.add('on')
+  const opt = (src, t) => { const fg = document.createElement('figure'); fg.innerHTML = '<img alt=""><figcaption></figcaption>'; fg.querySelector('img').src = src; fg.querySelector('figcaption').textContent = t; fg.onclick = () => { box.classList.remove('on'); phone.addSticker(src); say('贴上了，按住拖到你想要的地方') }; box.appendChild(fg) }
+  if (cut) opt(cut, '抠好的')
+  opt(raw, '原图')
+  const no = document.createElement('button'); no.className = 'b'; no.textContent = '不贴了'; no.onclick = () => box.classList.remove('on'); box.appendChild(no)
+}
+$('cover').onclick = () => $('fc').click()
+$('fc').onchange = async ev => { const f = ev.target.files[0]; ev.target.value = ''; if (!f) return; const u = await shrink(f, 480, 'image/jpeg'); phone.setCover(u); save({ cover: u }) }
+let isOpen = false
+$('toggle').onclick = () => { isOpen = !isOpen; isOpen ? phone.open() : phone.close() }
+</script>
+</body>
+</html>
